@@ -1874,10 +1874,10 @@ EOF
     
     # Verify the PKCS12 file with more detailed output
     echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore with detailed output..." | tee -a "$LOG_FILE"
-    keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE" || {
+    if ! keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE"; then
         echo "$(date '+%F %T') | ❌ ERROR: PKCS12 truststore verification failed" | tee -a "$LOG_FILE"
         return 1
-    }
+    fi
     
     # Verify the PKCS12 file
     echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore..." | tee -a "$LOG_FILE"
@@ -2350,17 +2350,17 @@ setup_local_node() {
         echo "$(date '+%F %T') | ℹ️ Need to extract NiFi (directory doesn't exist or is incomplete)" | tee -a "$LOG_FILE"
         # Extract NiFi tarball with more verbose output
         echo "$(date '+%F %T') | ℹ️ Extracting NiFi tarball..." | tee -a "$LOG_FILE"
-    sudo unzip -o "$NIFI_TARBALL" -d /tmp/ 2>&1 | tee -a "$LOG_FILE" || {
-        echo "$(date '+%F %T') | ❌ ERROR: Failed to extract NiFi tarball" | tee -a "$LOG_FILE"
-        echo "$(date '+%F %T') | ℹ️ Trying alternative extraction method..." | tee -a "$LOG_FILE"
-        
-        # Try alternative extraction method
-        sudo mkdir -p "/tmp/$NIFI_VERSION"
-        sudo unzip -o "$NIFI_TARBALL" -d "/tmp/$NIFI_VERSION" 2>&1 | tee -a "$LOG_FILE" || {
-            echo "$(date '+%F %T') | ❌ ERROR: All extraction methods failed" | tee -a "$LOG_FILE"
-            exit 1
-        }
-    }
+        if ! sudo unzip -o "$NIFI_TARBALL" -d /tmp/ 2>&1 | tee -a "$LOG_FILE"; then
+            echo "$(date '+%F %T') | ❌ ERROR: Failed to extract NiFi tarball" | tee -a "$LOG_FILE"
+            echo "$(date '+%F %T') | ℹ️ Trying alternative extraction method..." | tee -a "$LOG_FILE"
+
+            # Try alternative extraction method
+            sudo mkdir -p "/tmp/$NIFI_VERSION"
+            if ! sudo unzip -o "$NIFI_TARBALL" -d "/tmp/$NIFI_VERSION" 2>&1 | tee -a "$LOG_FILE"; then
+                echo "$(date '+%F %T') | ❌ ERROR: All extraction methods failed" | tee -a "$LOG_FILE"
+                exit 1
+            fi
+        fi
     
         # Check if extraction was successful and find the actual directory
         echo "$(date '+%F %T') | ℹ️ Checking extracted NiFi directory..." | tee -a "$LOG_FILE"
@@ -2428,10 +2428,10 @@ setup_local_node() {
             
             # Extract NiFi tarball
             echo "$(date '+%F %T') | ℹ️ Extracting NiFi tarball for incomplete installation..." | tee -a "$LOG_FILE"
-            sudo unzip -o "$NIFI_TARBALL" -d /tmp/ 2>&1 | tee -a "$LOG_FILE" || {
+            if ! sudo unzip -o "$NIFI_TARBALL" -d /tmp/ 2>&1 | tee -a "$LOG_FILE"; then
                 echo "$(date '+%F %T') | ❌ ERROR: Failed to extract NiFi tarball" | tee -a "$LOG_FILE"
                 exit 1
-            }
+            fi
             
             # Find the extracted directory
             EXTRACTED_DIR=$(find /tmp -maxdepth 1 -type d -name "nifi*" | grep -v "nifi-certs" | head -n 1)
@@ -2611,10 +2611,10 @@ setup_local_node() {
     
     # Verify the PKCS12 file with more detailed output
     echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore with detailed output..." | tee -a "$LOG_FILE"
-    sudo keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE" || {
+    if ! sudo keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE"; then
         echo "$(date '+%F %T') | ❌ ERROR: PKCS12 truststore verification failed" | tee -a "$LOG_FILE"
         exit 1
-    }
+    fi
     
     # Verify the PKCS12 file
     echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore..." | tee -a "$LOG_FILE"
@@ -2640,10 +2640,10 @@ setup_local_node() {
     
     # Verify the truststore is valid
     echo "$(date '+%F %T') | ℹ️ Verifying truststore validity in final location..." | tee -a "$LOG_FILE"
-    sudo keytool -list -keystore "$NIFI_DIR/certs/nifi-truststore.p12" -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE" || {
+    if ! sudo keytool -list -keystore "$NIFI_DIR/certs/nifi-truststore.p12" -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE"; then
         echo "$(date '+%F %T') | ❌ ERROR: Truststore verification failed in final location" | tee -a "$LOG_FILE"
         exit 1
-    }
+    fi
     
     # Create NiFi service file
     echo "$(date '+%F %T') | ℹ️ Creating NiFi service file..." | tee -a "$LOG_FILE"
@@ -2960,21 +2960,21 @@ NIFI_INIT
     
     # Verify the user exists
     echo "$(date '+%F %T') | ℹ️ Verifying NiFi user exists..." | tee -a "$LOG_FILE"
-    getent passwd "$SERVICE_USER" | tee -a "$LOG_FILE" || {
+    if ! getent passwd "$SERVICE_USER" | tee -a "$LOG_FILE"; then
         echo "$(date '+%F %T') | ⚠️ Warning: User $SERVICE_USER does not exist in /etc/passwd" | tee -a "$LOG_FILE"
         echo "$(date '+%F %T') | ℹ️ Falling back to root user for service..." | tee -a "$LOG_FILE"
         sudo sed -i "s|^User=.*|User=root|" /etc/systemd/system/nifi.service
         sudo sed -i "s|^Group=.*|Group=root|" /etc/systemd/system/nifi.service
         sudo systemctl daemon-reload
-    }
+    fi
     
     # Verify bootstrap.conf has proper run.as setting
     echo "$(date '+%F %T') | ℹ️ Verifying bootstrap.conf run.as setting..." | tee -a "$LOG_FILE"
-    sudo grep "^run.as=" "$NIFI_DIR/conf/bootstrap.conf" | tee -a "$LOG_FILE" || {
+    if ! sudo grep "^run.as=" "$NIFI_DIR/conf/bootstrap.conf" | tee -a "$LOG_FILE"; then
         echo "$(date '+%F %T') | ⚠️ Warning: run.as not found in bootstrap.conf" | tee -a "$LOG_FILE"
         echo "$(date '+%F %T') | ℹ️ Adding run.as=root to bootstrap.conf..." | tee -a "$LOG_FILE"
         echo "run.as=root" | sudo tee -a "$NIFI_DIR/conf/bootstrap.conf" > /dev/null
-    }
+    fi
     
     # Ensure NiFi directories have proper permissions
     echo "$(date '+%F %T') | ℹ️ Ensuring NiFi directories have proper permissions..." | tee -a "$LOG_FILE"
@@ -3100,10 +3100,10 @@ for (( i=1; i<=NODE_COUNT; i++ )); do
         
         # Verify the PKCS12 file with more detailed output
         echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore with detailed output..." | tee -a "$LOG_FILE"
-        keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE" || {
+        if ! keytool -list -v -keystore /tmp/nifi-truststore.p12 -storepass "$KEYSTORE_PASS" -storetype PKCS12 | tee -a "$LOG_FILE"; then
             echo "$(date '+%F %T') | ❌ ERROR: PKCS12 truststore verification failed" | tee -a "$LOG_FILE"
             exit 1
-        }
+        fi
         
         # Verify the PKCS12 file
         echo "$(date '+%F %T') | ℹ️ Verifying PKCS12 truststore..." | tee -a "$LOG_FILE"
