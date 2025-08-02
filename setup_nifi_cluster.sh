@@ -88,6 +88,8 @@ INSTALL_ALIASES=${INSTALL_ALIASES:-true}  # Set to false to skip installing comm
 SKIP_SSH_SETUP=${SKIP_SSH_SETUP:-false}  # Set to true to skip SSH key setup
 DEBUG_MODE=${DEBUG_MODE:-false}  # Set to true for more verbose debugging
 SKIP_KILL=${SKIP_KILL:-true}  # Set to true to skip killing NiFi processes (default: true to avoid termination issues)
+# Track whether a service file was located
+SERVICE_FILE_FOUND=false
 
 # Debug function
 debug() {
@@ -194,10 +196,10 @@ verify_certificate_files() {
             local found=false
             
             # List all directories and try to find a match
-            for dir in $(find "$CERT_DIR" -maxdepth 1 -type d | grep -v "^$CERT_DIR$" | grep -v "CA"); do
+            while IFS= read -r dir; do
                 local dir_name=$(basename "$dir")
                 local clean_dir=$(echo "$dir_name" | tr -d '-')
-                
+
                 # Check if the directory name contains the host name (ignoring case and special chars)
                 if [[ "${clean_dir,,}" == *"${clean_host,,}"* || "${clean_host,,}" == *"${clean_dir,,}"* ]]; then
                     cert_dirs_found=true
@@ -205,11 +207,11 @@ verify_certificate_files() {
                     echo "$(date '+%F %T') | ✅ Found certificate directory for host $host: $dir_name" | tee -a "$LOG_FILE"
                     break
                 fi
-            done
-            
+            done < <(find "$CERT_DIR" -maxdepth 1 -type d ! -path "$CERT_DIR" ! -name 'CA')
+
             # If still not found, try a more general approach
             if [[ "$found" == "false" ]]; then
-                local found_dir=$(find "$CERT_DIR" -maxdepth 1 -type d -name "*" | grep -v "^$CERT_DIR$" | grep -v "CA" | head -n 1)
+                local found_dir=$(find "$CERT_DIR" -maxdepth 1 -type d ! -path "$CERT_DIR" ! -name 'CA' | head -n 1)
                 if [[ -n "$found_dir" ]]; then
                     cert_dirs_found=true
                     echo "$(date '+%F %T') | ✅ Using available certificate directory for host $host: $(basename "$found_dir")" | tee -a "$LOG_FILE"
@@ -538,15 +540,17 @@ configure_nifi_properties() {
                 echo "$(date '+%F %T') | ℹ️ No NAR files found in $CUSTOM_NAR_DIR" | tee -a "$LOG_FILE"
                 
                 # For backward compatibility, check the old plugins directory
-                if [[ -d "$PLUGINS_DIR" ]] && ls $PLUGINS_DIR/*.nar 1> /dev/null 2>&1; then
+                if [[ -d "$PLUGINS_DIR" ]] && compgen -G "$PLUGINS_DIR/*.nar" > /dev/null; then
                     echo "$(date '+%F %T') | ℹ️ Found NAR files in legacy directory $PLUGINS_DIR" | tee -a "$LOG_FILE"
-                    sudo cp $PLUGINS_DIR/*.nar "$NIFI_DIR/lib/" || {
-                        echo "$(date '+%F %T') | ⚠️ Failed to copy NAR files from legacy directory" | tee -a "$LOG_FILE"
-                    }
+                    while IFS= read -r legacy_nar; do
+                        sudo cp "$legacy_nar" "$NIFI_DIR/lib/" || {
+                            echo "$(date '+%F %T') | ⚠️ Failed to copy NAR file: $legacy_nar" | tee -a "$LOG_FILE"
+                        }
+                    done < <(find "$PLUGINS_DIR" -maxdepth 1 -type f -name "*.nar")
                 fi
             fi
         fi
-        
+
         # Verify NAR files were copied
         echo "$(date '+%F %T') | ℹ️ Verifying NAR files in NiFi lib directory..." | tee -a "$LOG_FILE"
         nar_count=$(find "$NIFI_DIR/lib" -name "*.nar" | wc -l)
@@ -1237,7 +1241,7 @@ for SERVICE_FILE_PATH in "${SERVICE_FILE_PATHS[@]}"; do
 done
 
 # If service file not found on remote node, check if we can copy from local machine
-if [[ "$SERVICE_FILE_FOUND" != "true" ]]; then
+if [[ "${SERVICE_FILE_FOUND:-false}" != "true" ]]; then
     for SERVICE_FILE_PATH in "${SERVICE_FILE_PATHS[@]}"; do
         if [[ -f "$SERVICE_FILE_PATH" ]]; then
             echo "Found pre-created nifi.service file locally at: $SERVICE_FILE_PATH"
@@ -1254,7 +1258,7 @@ if [[ "$SERVICE_FILE_FOUND" != "true" ]]; then
     done
 fi
 
-if [[ "$SERVICE_FILE_FOUND" != "true" ]]; then
+if [[ "${SERVICE_FILE_FOUND:-false}" != "true" ]]; then
     echo "Pre-created service file not found, creating dynamically"
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "cat > /tmp/nifi.service << 'NIFISERVICE'
 [Unit]
@@ -1944,13 +1948,13 @@ EOF
                 echo "$(date '+%F %T') | ℹ️ No NAR files found in $CUSTOM_NAR_DIR for remote node" | tee -a "$LOG_FILE"
                 
                 # For backward compatibility, check the old plugins directory
-                if [[ -d "$PLUGINS_DIR" ]] && ls $PLUGINS_DIR/*.nar 1> /dev/null 2>&1; then
+                if [[ -d "$PLUGINS_DIR" ]] && compgen -G "$PLUGINS_DIR/*.nar" > /dev/null; then
                     echo "$(date '+%F %T') | ℹ️ Found NAR files in legacy directory $PLUGINS_DIR for remote node" | tee -a "$LOG_FILE"
-                    cp $PLUGINS_DIR/*.nar "/tmp/custom_nars/"
+                    find "$PLUGINS_DIR" -maxdepth 1 -type f -name "*.nar" -exec cp {} "/tmp/custom_nars/" \;
                 fi
             fi
         fi
-        
+
         # Check if we have any NAR files to transfer
         if find "/tmp/custom_nars" -name "*.nar" -type f | grep -q .; then
             echo "$(date '+%F %T') | ℹ️ Transferring custom NAR files to remote node..." | tee -a "$LOG_FILE"
