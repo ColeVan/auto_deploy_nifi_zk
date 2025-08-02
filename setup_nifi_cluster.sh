@@ -574,7 +574,7 @@ setup_remote_node() {
     
     # First, ensure Java is installed on the remote node
     echo "$(date '+%F %T') | ℹ️ Ensuring Java is installed on remote node..." | tee -a "$LOG_FILE"
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "
         if ! command -v java &> /dev/null; then
             echo 'Java not found, installing...'
             sudo apt-get update
@@ -1715,7 +1715,7 @@ EOF
     fi
 
     # Create a directory on the remote node for the tarball
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/nifi_setup"
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/nifi_setup"
     
     # Copy the tarball to the remote node with more reliable options
     echo "$(date '+%F %T') | ℹ️ Copying NiFi tarball to remote node..." | tee -a "$LOG_FILE"
@@ -1724,7 +1724,7 @@ EOF
         "$NIFI_TARBALL" "$user@$ip:/tmp/nifi_setup/"
     
     # Verify the tarball was copied successfully
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "if [[ -f \"/tmp/nifi_setup/$(basename "$NIFI_TARBALL")\" ]]; then
             echo \"Tarball copied successfully\";
             ln -sf \"/tmp/nifi_setup/$(basename "$NIFI_TARBALL")\" \"/tmp/$(basename "$NIFI_TARBALL")\";
@@ -1804,7 +1804,7 @@ EOF
     
     echo "$(date '+%F %T') | ℹ️ Copying certificate files to remote node..." | tee -a "$LOG_FILE"
     # Create a dedicated directory for certificate transfer to avoid truncation issues
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/nifi_certs"
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/nifi_certs"
     
     # Use more reliable SCP options to prevent truncation
     scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -1815,11 +1815,11 @@ EOF
     }
     
     # Create a symlink to the expected location
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "ln -sf /tmp/nifi_certs/nifi${id}-keystore.p12 /tmp/nifi${id}-keystore.p12"
     
     # Verify the file was transferred correctly
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "ls -la /tmp/nifi_certs/nifi${id}-keystore.p12 /tmp/nifi${id}-keystore.p12"
     
     # Create a proper PKCS12 truststore from the CA certificate
@@ -1885,11 +1885,11 @@ EOF
     }
     
     # Create a symlink to the expected location
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "ln -sf /tmp/nifi_certs/nifi-truststore.p12 /tmp/nifi-truststore.p12"
     
     # Verify the file was transferred correctly
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "ls -la /tmp/nifi_certs/nifi-truststore.p12 /tmp/nifi-truststore.p12"
     
     # Handle custom NAR files for remote nodes
@@ -1946,7 +1946,7 @@ EOF
             echo "$(date '+%F %T') | ℹ️ Transferring custom NAR files to remote node..." | tee -a "$LOG_FILE"
             
             # Create the directory on the remote node
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/custom_nars"
+            ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/custom_nars"
             
             # Transfer the NAR files
             scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
@@ -1956,7 +1956,7 @@ EOF
             
             # Verify the transfer
             echo "$(date '+%F %T') | ℹ️ Verifying NAR files on remote node..." | tee -a "$LOG_FILE"
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "ls -la /tmp/custom_nars/"
+            ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "ls -la /tmp/custom_nars/"
         else
             echo "$(date '+%F %T') | ℹ️ No custom NAR files to transfer to remote node" | tee -a "$LOG_FILE"
         fi
@@ -1969,7 +1969,7 @@ EOF
         /tmp/nifi_setup_commands.sh "$user@$ip:/tmp/nifi_setup_commands.sh"
     
     # Make the script executable
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" \
         "chmod +x /tmp/nifi_setup_commands.sh"
     
     # Run the script with sudo in non-interactive mode
@@ -1977,7 +1977,7 @@ EOF
     
     # Create a more robust approach for sudo access
     # First, create a script that will run the setup commands with sudo
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "cat > /tmp/run_with_sudo.sh << 'EOF'
+    ssh -t -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "cat > /tmp/run_with_sudo.sh << 'EOF'
 #!/bin/bash
 # This script will run the setup commands with sudo, handling the password prompt if needed
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
