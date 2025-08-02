@@ -568,6 +568,7 @@ setup_remote_node() {
     local ip="$3"
     local user="$4"
     local SERVICE_FILE_PATH=""  # Initialize SERVICE_FILE_PATH to avoid unbound variable error
+    local SERVICE_FILE_FOUND=false  # Track if service file is located for this node
 
     echo "$(date '+%F %T') | 🖥️ Setting up remote NiFi node $id on $ip..." | tee -a "$LOG_FILE"
     
@@ -608,6 +609,7 @@ setup_remote_node() {
     NIFI_VERSION=""
     EXTRACTED_DIR=""
     SKIP_EXTRACTION=false
+    SERVICE_FILE_FOUND=false
     nifi_pids=""
     still_running=""
     nifi_sh_pids=""
@@ -2672,7 +2674,7 @@ setup_local_node() {
     
     [Install]
     WantedBy=multi-user.target
-    EOF
+EOF
 
     sudo cp /tmp/nifi.service /etc/systemd/system/nifi.service
     rm -f /tmp/nifi.service
@@ -2712,24 +2714,23 @@ setup_local_node() {
             JAVA_HOME=$(find /usr/lib/jvm -maxdepth 1 -type d -name "java*" | head -n 1)
         fi
         
-        if [ -n "$JAVA_HOME" ]; then
-            echo "$(date '+%F %T') | ✅ Found JAVA_HOME: $JAVA_HOME" | tee -a "$LOG_FILE"
-            
-            # Add JAVA_HOME to system-wide environment
-            echo "JAVA_HOME=$JAVA_HOME" | sudo tee -a /etc/environment
-            
-            # Add JAVA_HOME to nifi.service with hardcoded path
-            sudo sed -i "/\\[Service\\]/a Environment=JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64" /etc/systemd/system/nifi.service
-            
-            # Add JAVA_HOME to bootstrap.conf
-            if ! sudo grep -q "^java.home=" "$NIFI_DIR/conf/bootstrap.conf"; then
-                echo "$(date '+%F %T') | ℹ️ Adding JAVA_HOME to bootstrap.conf..." | tee -a "$LOG_FILE"
-                echo "java.home=$JAVA_HOME" | sudo tee -a "$NIFI_DIR/conf/bootstrap.conf" > /dev/null
-            fi
-            
-            # Create a wrapper script for nifi.sh
-            echo "$(date '+%F %T') | ℹ️ Creating wrapper script for nifi.sh..." | tee -a "$LOG_FILE"
-            cat > /tmp/nifi-wrapper.sh <<EOF
+        echo "$(date '+%F %T') | ✅ Found JAVA_HOME: $JAVA_HOME" | tee -a "$LOG_FILE"
+
+        # Add JAVA_HOME to system-wide environment
+        echo "JAVA_HOME=$JAVA_HOME" | sudo tee -a /etc/environment
+
+        # Add JAVA_HOME to nifi.service with hardcoded path
+        sudo sed -i "/\\[Service\\]/a Environment=JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64" /etc/systemd/system/nifi.service
+
+        # Add JAVA_HOME to bootstrap.conf
+        if ! sudo grep -q "^java.home=" "$NIFI_DIR/conf/bootstrap.conf"; then
+            echo "$(date '+%F %T') | ℹ️ Adding JAVA_HOME to bootstrap.conf..." | tee -a "$LOG_FILE"
+            echo "java.home=$JAVA_HOME" | sudo tee -a "$NIFI_DIR/conf/bootstrap.conf" > /dev/null
+        fi
+
+        # Create a wrapper script for nifi.sh
+        echo "$(date '+%F %T') | ℹ️ Creating wrapper script for nifi.sh..." | tee -a "$LOG_FILE"
+        cat > /tmp/nifi-wrapper.sh <<EOF
 #!/bin/bash
 export JAVA_HOME=/usr/lib/jvm/java-21-openjdk-amd64
 if [ ! -d "\$JAVA_HOME" ]; then
@@ -2744,22 +2745,22 @@ fi
 echo "Using JAVA_HOME=\$JAVA_HOME"
 $NIFI_DIR/bin/nifi.sh "\$@"
 EOF
-    if [ -n "$JAVA_HOME" ]; then
-        sudo chmod +x /tmp/nifi-wrapper.sh
-        sudo mv /tmp/nifi-wrapper.sh "$NIFI_DIR/bin/nifi-wrapper.sh"
+        if [ -n "$JAVA_HOME" ]; then
+          sudo chmod +x /tmp/nifi-wrapper.sh
+          sudo mv /tmp/nifi-wrapper.sh "$NIFI_DIR/bin/nifi-wrapper.sh"
 
-        echo "$(date '+%F %T') | ℹ️ Updating service file to use wrapper script..." | tee -a "$LOG_FILE"
-        sudo sed -i "s|ExecStart=.*nifi.sh start|ExecStart=$NIFI_DIR/bin/nifi-wrapper.sh start|" /etc/systemd/system/nifi.service
-        sudo sed -i "s|ExecStop=.*nifi.sh stop|ExecStop=$NIFI_DIR/bin/nifi-wrapper.sh stop|" /etc/systemd/system/nifi.service
+          echo "$(date '+%F %T') | ℹ️ Updating service file to use wrapper script..." | tee -a "$LOG_FILE"
+          sudo sed -i "s|ExecStart=.*nifi.sh start|ExecStart=$NIFI_DIR/bin/nifi-wrapper.sh start|" /etc/systemd/system/nifi.service
+          sudo sed -i "s|ExecStop=.*nifi.sh stop|ExecStop=$NIFI_DIR/bin/nifi-wrapper.sh stop|" /etc/systemd/system/nifi.service
 
-        export JAVA_HOME="$JAVA_HOME"
-    else
-        echo "$(date '+%F %T') | ❌ ERROR: Could not find JAVA_HOME directory" | tee -a "$LOG_FILE"
-        exit 1
-    fi
+          export JAVA_HOME="$JAVA_HOME"
+      else
+          echo "$(date '+%F %T') | ❌ ERROR: Could not find JAVA_HOME directory" | tee -a "$LOG_FILE"
+          exit 1
+      fi
+  fi
 
-    
-    # Create NiFi user and group if requested
+      # Create NiFi user and group if requested
     if [[ "$CREATE_USER" == "true" && "$RUN_AS_ROOT" != "true" ]]; then
         echo "$(date '+%F %T') | ℹ️ Creating NiFi user and group..." | tee -a "$LOG_FILE"
         
