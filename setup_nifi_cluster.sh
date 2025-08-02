@@ -1217,52 +1217,16 @@ if [[ "\${CREATE_USER:-true}" == "true" && "\${RUN_AS_ROOT:-false}" != "true" ]]
 fi
 
 # Create service file
-# Check if the service file exists in the repository or current directory
-SERVICE_FILE_PATHS=(
-    "/opt/nifi-zk-auto-deployment/nifi.service"
-    "./nifi.service"
-    "../nifi.service"
-    "$(pwd)/nifi.service"
-    "$(dirname "$(pwd)")/nifi.service"
-)
-
-SERVICE_FILE_FOUND=false
-for SERVICE_FILE_PATH in "${SERVICE_FILE_PATHS[@]}"; do
-    echo "Checking for service file at: $SERVICE_FILE_PATH"
-    if ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "test -f '$SERVICE_FILE_PATH'"; then
-        echo "Found pre-created nifi.service file at: $SERVICE_FILE_PATH on remote node"
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo cp '$SERVICE_FILE_PATH' /etc/systemd/system/nifi.service"
-        # Update the service file with the correct paths and user/group
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|NIFI_DIR|$NIFI_DIR|g\" /etc/systemd/system/nifi.service"
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|SERVICE_USER|$SERVICE_USER|g\" /etc/systemd/system/nifi.service"
-        ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|SERVICE_GROUP|$SERVICE_GROUP|g\" /etc/systemd/system/nifi.service"
-        SERVICE_FILE_FOUND=true
-        # Keep track of the path that was found
-        break
-    fi
-done
-
-# If service file not found on remote node, check if we can copy from local machine
-if [[ "${SERVICE_FILE_FOUND:-false}" != "true" ]]; then
-    for SERVICE_FILE_PATH in "${SERVICE_FILE_PATHS[@]}"; do
-        if [[ -f "$SERVICE_FILE_PATH" ]]; then
-            echo "Found pre-created nifi.service file locally at: $SERVICE_FILE_PATH"
-            scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$SERVICE_FILE_PATH" "$user@$ip:/tmp/nifi.service"
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo cp /tmp/nifi.service /etc/systemd/system/nifi.service"
-            # Update the service file with the correct paths and user/group
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|NIFI_DIR|$NIFI_DIR|g\" /etc/systemd/system/nifi.service"
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|SERVICE_USER|$SERVICE_USER|g\" /etc/systemd/system/nifi.service"
-            ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo sed -i \"s|SERVICE_GROUP|$SERVICE_GROUP|g\" /etc/systemd/system/nifi.service"
-            SERVICE_FILE_FOUND=true
-            # Keep track of the path that was found
-            break
-        fi
-    done
-fi
-
-if [[ "${SERVICE_FILE_FOUND:-false}" != "true" ]]; then
-    echo "Pre-created service file not found, creating dynamically"
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "cat > /tmp/nifi.service << 'NIFISERVICE'
+if [[ -f "/tmp/nifi.service" ]]; then
+    echo "Found pre-created nifi.service file, using it."
+    sudo cp /tmp/nifi.service /etc/systemd/system/nifi.service
+    # Update the service file with the correct paths and user/group
+    sudo sed -i "s|NIFI_DIR|$NIFI_DIR|g" /etc/systemd/system/nifi.service
+    sudo sed -i "s|SERVICE_USER|$SERVICE_USER|g" /etc/systemd/system/nifi.service
+    sudo sed -i "s|SERVICE_GROUP|$SERVICE_GROUP|g" /etc/systemd/system/nifi.service
+else
+    echo "Pre-created service file not found, creating dynamically."
+    cat > /tmp/nifi.service << 'NIFISERVICE'
 [Unit]
 Description=Apache NiFi
 After=network.target
@@ -1278,8 +1242,9 @@ PIDFile=$NIFI_DIR/run/nifi.pid
 LimitNOFILE=50000
 [Install]
 WantedBy=multi-user.target
-NIFISERVICE"
-    ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "sudo cp /tmp/nifi.service /etc/systemd/system/nifi.service && rm -f /tmp/nifi.service"
+NIFISERVICE
+    sudo cp /tmp/nifi.service /etc/systemd/system/nifi.service
+    rm -f /tmp/nifi.service
 fi
 
 # Create a proper SysV init script as a fallback
@@ -1729,6 +1694,25 @@ JAVA_HOME=$JAVA_HOME $NIFI_DIR/bin/nifi.sh status
 
 echo "NiFi node $id configured and started on $ip"
 EOF
+
+    # Check for a pre-existing nifi.service file to copy to the remote node
+    local service_file_to_copy=""
+    for service_file_path in "/opt/nifi-zk-auto-deployment/nifi.service" "./nifi.service" "../nifi.service"; do
+        if [[ -f "$service_file_path" ]]; then
+            echo "Found nifi.service file at: $service_file_path, will copy to remote node."
+            service_file_to_copy="$service_file_path"
+            break
+        fi
+    done
+
+    # If a service file was found, copy it to the remote node
+    if [[ -n "$service_file_to_copy" ]]; then
+        echo "$(date '+%F %T') | ℹ️ Copying service file to remote node..." | tee -a "$LOG_FILE"
+        scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+            "$service_file_to_copy" "$user@$ip:/tmp/nifi.service" || {
+            echo "$(date '+%F %T') | ⚠️ Failed to copy service file, remote node will generate one." | tee -a "$LOG_FILE"
+        }
+    fi
 
     # Create a directory on the remote node for the tarball
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$user@$ip" "mkdir -p /tmp/nifi_setup"
